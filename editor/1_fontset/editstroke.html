@@ -1,0 +1,254 @@
+<body>
+    <div id="imgzone" class="widget">
+        <div id="stdimg"></div>
+        <div id="customimg"></div>
+    </div>
+    <div id="controls" class="widget">
+        Controls:
+        <button onclick="loadAll()">Load All</button>
+        <button onclick="showimg('S-2')">Show S-2</button>
+        <button onclick="dlimg()">Save This</button>
+    </div>
+</body>
+
+<script src="https://cdn.bootcdn.net/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+<script>
+    // helper
+    function $(selector) {
+        return document.querySelector(selector);
+    }
+    function $$(selector) {
+        return document.querySelectorAll(selector);
+    }
+</script>
+<script>
+    async function getFolderHD(handler, path) {
+        let folder = handler;
+        const folders = path.split('/');
+        for (const p of folders) {
+            window.folder = folder;
+            folder = await folder.getDirectoryHandle(p);
+        }
+        return folder;
+    }
+
+    // main
+    function init() {
+        window.EDITOR = window.EDITOR || {
+            "dirHandle": null,
+        };
+
+        window.EDITOR.STROKES = {
+            "standard": {
+                "settings": {
+                    "stroke size": 256
+                },
+                "maping": {},
+                "strokes": {}
+            },
+            "custom": {
+                "strokes": {}
+            },
+            "current": {
+                "id": null
+            }
+        }
+    }
+
+    async function loadStd(f) {
+        stdfile = await f.getFile();
+        if (stdfile) {
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                const text = e.target.result;
+                window.EDITOR.STROKES.standard.mapping = jsyaml.load(text).mapping;
+            };
+            reader.readAsText(stdfile);
+        }
+    }
+
+    async function loadJpg(field, f) {
+        jpgdir = f;
+        if (jpgdir) {
+            const entries = jpgdir.entries();
+            for await (const entry of entries) {
+                var fname = entry[0];
+                console.log(1, fname)
+                var ftype = entry[1].kind;
+                const file = await entry[1].getFile();
+
+                if (file.type === "image/jpeg") {
+                    const reader = new FileReader();
+                    reader.onload = function (e) {
+                        console.log(2, fname)
+                        console.log('----------------')
+                        // read image
+                        const img = new Image();
+                        img.src = e.target.result;
+                        
+                        // load image to memory
+                        var imgid = fname.toUpperCase().replace(".JPG", '');
+                        window.EDITOR.STROKES[field].strokes[imgid] = {
+                            "img": img,
+                            "adjust": {
+                                "move": [0, 0],
+                                "scale": 1,
+                                "rotate": 0,
+                                "transform": [0, 0]
+                            }
+                        };
+                    };
+                    reader.readAsDataURL(file);
+                }
+            }
+        }
+    }
+
+    async function loadAll() {
+        const dirHandle = await window.showDirectoryPicker();
+        window.EDITOR.dirHandle = dirHandle;
+
+        var f_stdfolder = await getFolderHD(dirHandle, 'fontset_std/standard');
+        var f_stdfile = await f_stdfolder.getFileHandle('standard.yaml');
+        var f_stdjpg = await getFolderHD(dirHandle, 'fontset_std/src');
+        var f_customjpg = await getFolderHD(dirHandle, 'fontset2/src');
+
+        await loadStd(f_stdfile);
+        await loadJpg('standard', f_stdjpg);
+        await loadJpg('custom', f_customjpg);
+    }
+
+    // main2
+    function showimg(id) {
+        var stdimg = $("#stdimg");
+        var customimg = $("#customimg");
+
+        var imgbg = window.EDITOR.STROKES['standard'].strokes[id].img;
+        var imgfg = saveimg(id);    // resize & apply previous adjustment
+
+        stdimg.innerHTML = "";
+        customimg.innerHTML = "";
+        stdimg.appendChild(imgbg);
+        customimg.appendChild(imgfg);
+
+        window.EDITOR.STROKES.current.id = id;
+    }
+
+    function saveimg(id) {
+        const stroke_size = window.EDITOR.STROKES['standard'].settings['stroke size'];
+
+        var origin = window.EDITOR.STROKES['custom'].strokes[id].img;
+        var adjust = window.EDITOR.STROKES['custom'].strokes[id].adjust;
+
+        var canvas = document.createElement('canvas');
+        canvas.height = stroke_size;
+        canvas.width = stroke_size;
+
+        var ctx = canvas.getContext('2d');
+
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, stroke_size, stroke_size);  // fill canvas with white
+
+        ctx.drawImage(
+            origin,
+            adjust.move[0],
+            adjust.move[1],
+            (stroke_size + adjust.transform[0]) * adjust.scale,
+            (stroke_size + adjust.transform[1]) * adjust.scale
+        );
+        ctx.rotate(adjust.rotate * Math.PI / 180);
+
+        var img = new Image();
+        img.src = canvas.toDataURL("image/jpeg");
+
+        return img;
+    }
+
+    async function dlimg() {
+        var imgid = window.EDITOR.STROKES.current.id;
+        var img = saveimg(imgid);
+
+        var dirHandle = window.EDITOR.dirHandle;
+        var f_customjpg = await getFolderHD(dirHandle, 'fontset2/src');
+        f_customjpg.requestPermission({ mode: 'readwrite' });
+        f_customjpg.getFileHandle(imgid + '.jpg').then(async function (fileHandle) {
+            const writable = await fileHandle.createWritable();
+            const blob = await (await fetch(img.src)).blob();
+            await writable.write(blob);
+            await writable.close();
+        });
+    }
+
+    // adjust hotkeys
+    function adjusthotkeys(key) {
+        var currid = window.EDITOR.STROKES.current.id;
+        var adjust = window.EDITOR.STROKES['custom'].strokes[currid].adjust;
+
+        switch (key) {
+            // move
+            case 'a':
+                adjust.move[0] -= 1;
+                break;
+            case 'd':
+                adjust.move[0] += 1;
+                break;
+            case 'w':
+                adjust.move[1] -= 1;
+                break;
+            case 's':
+                adjust.move[1] += 1;
+                break;
+            // scale
+            case '=':
+                adjust.scale += 0.01;
+                break;
+            case '-':
+                adjust.scale -= 0.01;
+                break;
+            // rotate
+            case ',':
+                adjust.rotate -= 1;
+                break;
+            case '.':
+                adjust.rotate += 1;
+                break;
+            // transform
+            case 'ArrowUp':
+                adjust.transform[1] -= 1;
+                break;
+            case 'ArrowDown':
+                adjust.transform[1] += 1;
+                break;
+            case 'ArrowLeft':
+                adjust.transform[0] -= 1;
+                break;
+            case 'ArrowRight':
+                adjust.transform[0] += 1;
+                break;
+        }
+
+        // update
+        window.EDITOR.STROKES['custom'].strokes[currid].adjust = adjust;
+    }
+
+    window.addEventListener('keydown', function (e) {
+        adjusthotkeys(e.key);
+        showimg(window.EDITOR.STROKES.current.id);    // refresh
+    });
+
+    // init
+    init();
+</script>
+
+<style>
+    .widget {
+        border: 1px solid black;
+    }
+
+    #customimg {
+        position: absolute;
+        top: 0;
+        left: 0;
+        opacity: 0.6;
+    }
+</style>
