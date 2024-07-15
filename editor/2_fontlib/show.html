@@ -1,0 +1,374 @@
+<body>
+    <div id="imgzone" class="widget">
+        <div id="stdimg"></div>
+        <div id="customimg">你</div>
+    </div>
+    <div id="controls" class="widget">
+        Controls:
+        <button onclick="loadAll()">Load All</button>
+        <input placeholder="你" id="switchchar">
+        <button onclick="schar($('#switchchar').value)">Show Char</button>
+        <button onclick="aaasave(event)">Save All</button>
+    </div>
+    <div id="choose" class="widget">
+
+    </div>
+</body>
+
+<script src="https://cdn.bootcdn.net/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+<script>
+    // helper
+    function $(selector) {
+        return document.querySelector(selector);
+    }
+    function $$(selector) {
+        return document.querySelectorAll(selector);
+    }
+</script>
+<script>
+    async function getFolderHD(handler, path) {
+        let folder = handler;
+        const folders = path.split('/');
+        for (const p of folders) {
+            window.folder = folder;
+            folder = await folder.getDirectoryHandle(p);
+        }
+        return folder;
+    }
+
+    // main
+    function init() {
+        window.EDITOR = window.EDITOR || {
+            "dirHandle": null,
+        };
+
+        window.EDITOR.STROKES = {
+            "standard": {
+                "settings": {
+                    "stroke size": 256
+                },
+                "mapping": {},
+                "strokes": {}
+            }
+        }
+
+        window.EDITOR.CHARS = {
+            "chars": {
+                "<unicode>": [
+                    {
+                        "stroke": "<stroke id>",
+                        "adjust": {
+                            "move": [0, 0],
+                            "scale": 1,
+                            "rotate": 0,
+                            "transform": [0, 0]
+                        }
+                    }
+                ]
+            },
+            "current": {
+                "char": null,
+                "stroke": -1
+            },
+            "settings": {
+                "char size": 512
+            }
+        }
+    }
+
+    async function loadStd(f) {
+        stdfile = await f.getFile();
+        if (stdfile) {
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                const text = e.target.result;
+                window.EDITOR.STROKES.standard.mapping = jsyaml.load(text).mapping;
+            };
+            reader.readAsText(stdfile);
+        }
+    }
+
+    async function loadJpg(f) {
+        jpgdir = f;
+        if (jpgdir) {
+            const entries = jpgdir.entries();
+            for await (const entry of entries) {
+                var fname = entry[0];
+                console.log(1, fname)
+                var ftype = entry[1].kind;
+                const file = await entry[1].getFile();
+
+                if (file.type === "image/png") {
+                    const reader = new FileReader();
+                    reader.onload = function (e) {
+                        console.log(2, fname)
+                        console.log('----------------')
+                        // read image
+                        const img = new Image();
+                        img.src = e.target.result;
+
+                        // load image to memory
+                        var imgid = fname.toUpperCase().replace(".PNG", '');
+                        window.EDITOR.STROKES.standard.strokes[imgid] = {
+                            "img": img,
+                            "adjust": {
+                                "move": [0, 0],
+                                "scale": 1,
+                                "rotate": 0,
+                                "transform": [0, 0]
+                            }
+                        };
+                    };
+                    reader.readAsDataURL(file);
+
+                    await new Promise(resolve => setTimeout(resolve, 50));
+                }
+            }
+        }
+    }
+
+    async function loadJson(f) {
+        jsonfile = await f.getFileHandle('chars.json');
+        if (jsonfile) {
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                const text = e.target.result;
+                console.log(text)
+                window.EDITOR.CHARS.chars = JSON.parse(text);
+            };
+            reader.readAsText(await jsonfile.getFile());
+        }
+    }
+
+    async function loadAll() {
+        const dirHandle = await window.showDirectoryPicker();
+        window.EDITOR.dirHandle = dirHandle;
+
+        var f_jsonfile = await getFolderHD(dirHandle, 'fontlib');
+        var f_stdfolder = await getFolderHD(dirHandle, 'fontset_std/standard');
+        var f_stdfile = await f_stdfolder.getFileHandle('standard.yaml');
+        var f_stdjpg = await getFolderHD(dirHandle, 'fontset2/src');
+
+        $("#stdimg").innerText = "...";
+        await loadJson(f_jsonfile);
+        await loadStd(f_stdfile);
+        await loadJpg(f_stdjpg);
+        $("#stdimg").innerHTML = "";
+
+        $("#choose").innerHTML = "";
+        for (var i in window.EDITOR.STROKES.standard.strokes) {
+            var img = window.EDITOR.STROKES.standard.strokes[i].img;
+            const imgid = i;
+
+            img.onclick = function () {
+                console.log(imgid)
+                addimg(imgid);
+            }
+
+            $("#choose").appendChild(img);
+        }
+    }
+
+    // main2
+    function clearimgs() {
+        var stdimg = $("#stdimg");
+        var customimg = $("#customimg");
+
+        stdimg.innerHTML = "";
+        customimg.innerHTML = "";
+    }
+
+    function showchar(char) {
+        var stdimg = $("#stdimg");
+        var customimg = $("#customimg");
+
+        customimg.innerText = char;
+    }
+
+    function addimg(imgid) {
+        var stdimg = $("#stdimg");
+        var customimg = $("#customimg");
+        var curr_char = window.EDITOR.CHARS.current.char;
+
+        var img = window.EDITOR.STROKES.standard.strokes[imgid].img;
+        var adjust = {
+            "move": [0, 0],
+            "scale": 1,
+            "rotate": 0,
+            "transform": [0, 0]
+        };
+
+        window.EDITOR.CHARS.chars[curr_char] = window.EDITOR.CHARS.chars[curr_char] || []
+
+        window.EDITOR.CHARS.chars[curr_char].push({
+            "stroke": imgid,
+            "adjust": adjust
+        });
+
+        window.EDITOR.CHARS.current.stroke = window.EDITOR.CHARS.chars[curr_char].length - 1;
+
+        rerender();
+    }
+
+    function rerender() {
+        var curr_char = window.EDITOR.CHARS.current.char;
+        var strokes = window.EDITOR.CHARS.chars[curr_char];
+
+        var stdimg = $("#stdimg");
+        var customimg = $("#customimg");
+
+        stdimg.innerHTML = "";
+
+        var canvas = document.createElement('canvas');
+        var a_size = window.EDITOR.CHARS.settings['char size'];
+        canvas.height = a_size;
+        canvas.width = a_size;
+        var ctx0 = canvas.getContext('2d');
+        ctx0.fillStyle = 'white';
+        ctx0.fillRect(0, 0, a_size, a_size);  // fill canvas with white
+
+        for (var i in strokes) {
+            var imgid = strokes[i].stroke;
+            var img = window.EDITOR.STROKES.standard.strokes[imgid].img;
+            var adjust = strokes[i].adjust;
+
+            var ctx = canvas.getContext('2d');
+
+            ctx.rotate(adjust.rotate * Math.PI / 180);
+            ctx.drawImage(
+                img,
+                adjust.move[0],
+                adjust.move[1],
+                (a_size + adjust.transform[0]) * adjust.scale,
+                (a_size + adjust.transform[1]) * adjust.scale
+            );
+        }
+
+        var img = new Image();
+        img.src = canvas.toDataURL("image/jpeg");
+
+        stdimg.appendChild(img);
+    }
+
+    function schar(c) {
+        window.EDITOR.CHARS.current.char = c;
+        window.EDITOR.CHARS.current.stroke = -1;
+        showchar(c);
+        rerender();
+    }
+
+    async function savejson() {
+        var json = JSON.stringify(window.EDITOR.CHARS.chars);
+        var blob = new Blob([json], { type: "application/json" });
+        var dirHandle = window.EDITOR.dirHandle;
+        var fileHandle = await getFolderHD(dirHandle, 'fontlib');
+        var jsonfile = await fileHandle.getFileHandle('chars.json', { create: true });
+        
+        var writeable = await jsonfile.createWritable();
+        await writeable.write(blob);
+        await writeable.close();
+    }
+
+    // adjust hotkeys
+    function adjusthotkeys(key) {
+        var curr_char = window.EDITOR.CHARS.current.char;
+        var curridx = window.EDITOR.CHARS.current.stroke;
+        if (curridx == -1) {
+            return;
+        }
+
+        var adjust = window.EDITOR.CHARS.chars[curr_char][curridx].adjust;
+
+        switch (key) {
+            // move
+            case 'a':
+                adjust.move[0] -= 1;
+                break;
+            case 'd':
+                adjust.move[0] += 1;
+                break;
+            case 'w':
+                adjust.move[1] -= 1;
+                break;
+            case 's':
+                adjust.move[1] += 1;
+                break;
+            // scale
+            case '=':
+                adjust.scale += 0.01;
+                break;
+            case '-':
+                adjust.scale -= 0.01;
+                break;
+            // rotate
+            case ',':
+                adjust.rotate -= 1;
+                break;
+            case '.':
+                adjust.rotate += 1;
+                break;
+            // transform
+            case 'ArrowUp':
+                adjust.transform[1] -= 1;
+                break;
+            case 'ArrowDown':
+                adjust.transform[1] += 1;
+                break;
+            case 'ArrowLeft':
+                adjust.transform[0] -= 1;
+                break;
+            case 'ArrowRight':
+                adjust.transform[0] += 1;
+                break;
+            // delete
+            case 'Delete':
+                window.EDITOR.CHARS.chars[curr_char].splice(curridx, 1);
+                window.EDITOR.CHARS.current.stroke = window.EDITOR.CHARS.chars[curr_char].length-1;
+                return;
+        }
+
+        // update
+        window.EDITOR.CHARS.chars[curr_char][curridx].adjust = adjust;
+    }
+
+    window.addEventListener('keydown', function (e) {
+        adjusthotkeys(e.key);
+        rerender();    // refresh
+    });
+
+    // init
+    init();
+</script>
+
+<style>
+    .widget {
+        border: 1px solid black;
+    }
+
+    #customimg {
+        width: 512px;
+        height: 512px;
+        font-size: 350px;
+        line-height: 512px;
+        display: flex;
+        justify-content: center;
+        user-select: none;
+        color: #fc7f9466;
+        z-index: 100;
+        border-right: solid 1px black;
+        font-family: Optima-Regular, Optima, PingFangSC-light, PingFangTC-light, "PingFang SC", Cambria, Cochin, Georgia, Times, "Times New Roman", serif;
+    }
+
+    #stdimg {
+        position: absolute;
+        top: 0;
+        left: 0;
+        opacity: 0.6;
+    }
+
+    #choose img {
+        width: 100px;
+        margin: 10px;
+        border: solid 1px black;
+    }
+</style>

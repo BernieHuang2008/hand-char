@@ -6,8 +6,8 @@
     <div id="controls" class="widget">
         Controls:
         <button onclick="loadAll()">Load All</button>
-        <button onclick="showimg('S-2')">Show S-2</button>
-        <button onclick="dlimg()">Save This</button>
+        <button onclick="shownext()">Show Next</button>
+        <button onclick="aaasave(event)">Save All</button>
     </div>
 </body>
 
@@ -43,7 +43,7 @@
                 "settings": {
                     "stroke size": 256
                 },
-                "maping": {},
+                "mapping": {},
                 "strokes": {}
             },
             "custom": {
@@ -85,7 +85,7 @@
                         // read image
                         const img = new Image();
                         img.src = e.target.result;
-                        
+
                         // load image to memory
                         var imgid = fname.toUpperCase().replace(".JPG", '');
                         window.EDITOR.STROKES[field].strokes[imgid] = {
@@ -99,6 +99,8 @@
                         };
                     };
                     reader.readAsDataURL(file);
+
+                    await new Promise(resolve => setTimeout(resolve, 50));
                 }
             }
         }
@@ -113,9 +115,12 @@
         var f_stdjpg = await getFolderHD(dirHandle, 'fontset_std/src');
         var f_customjpg = await getFolderHD(dirHandle, 'fontset2/src');
 
+        $("#stdimg").innerText = "loading...";
         await loadStd(f_stdfile);
         await loadJpg('standard', f_stdjpg);
         await loadJpg('custom', f_customjpg);
+        $("#stdimg").innerHTML = "";
+        showimg("S-1")
     }
 
     // main2
@@ -134,6 +139,25 @@
         window.EDITOR.STROKES.current.id = id;
     }
 
+    function shownext() {
+        if (window.EDITOR.STROKES.current.id == null) {
+            showimg('S-1');
+            return;
+        }
+
+        cs = EDITOR.STROKES.standard.mapping.character;
+        next_id = null;
+        for (x in cs) {
+            if (next_id == -1) {
+                showimg(x);
+                break;
+            }
+            if (x == window.EDITOR.STROKES.current.id) {
+                next_id = -1;
+            }
+        }
+    }
+
     function saveimg(id) {
         const stroke_size = window.EDITOR.STROKES['standard'].settings['stroke size'];
 
@@ -149,6 +173,7 @@
         ctx.fillStyle = 'white';
         ctx.fillRect(0, 0, stroke_size, stroke_size);  // fill canvas with white
 
+        ctx.rotate(adjust.rotate * Math.PI / 180);
         ctx.drawImage(
             origin,
             adjust.move[0],
@@ -156,7 +181,6 @@
             (stroke_size + adjust.transform[0]) * adjust.scale,
             (stroke_size + adjust.transform[1]) * adjust.scale
         );
-        ctx.rotate(adjust.rotate * Math.PI / 180);
 
         var img = new Image();
         img.src = canvas.toDataURL("image/jpeg");
@@ -164,20 +188,40 @@
         return img;
     }
 
-    async function dlimg() {
-        var imgid = window.EDITOR.STROKES.current.id;
-        var img = saveimg(imgid);
+    function dataURIToBlob(dataURI) {
+        // Split the data URI into parts, MIME type and the base64 data
+        const parts = dataURI.split(';base64,');
+        const mimeType = parts[0].split(':')[1];
+        const base64 = parts[1];
+        const binaryStr = atob(base64); // Decode base64
 
-        var dirHandle = window.EDITOR.dirHandle;
-        var f_customjpg = await getFolderHD(dirHandle, 'fontset2/src');
-        f_customjpg.requestPermission({ mode: 'readwrite' });
-        f_customjpg.getFileHandle(imgid + '.jpg').then(async function (fileHandle) {
+        // Convert binary string to a typed array
+        const len = binaryStr.length;
+        const uint8Array = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+            uint8Array[i] = binaryStr.charCodeAt(i);
+        }
+
+        // Create a Blob from the typed array
+        return new Blob([uint8Array], { type: mimeType });
+    }
+
+    async function aaasave (event) {
+        event.preventDefault(); // Prevent the default action
+
+        for (var id in window.EDITOR.STROKES['custom'].strokes) {
+            var img = saveimg(id);
+            var blob = dataURIToBlob(img.src);
+
+            var filename = id + '.jpg';
+            var fileHandle = await getFolderHD(window.EDITOR.dirHandle, "fontset2/src");
+            fileHandle = await fileHandle.getFileHandle(filename, { create: true });
             const writable = await fileHandle.createWritable();
-            const blob = await (await fetch(img.src)).blob();
             await writable.write(blob);
             await writable.close();
-        });
+        }
     }
+
 
     // adjust hotkeys
     function adjusthotkeys(key) {

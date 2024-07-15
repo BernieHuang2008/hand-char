@@ -1,7 +1,6 @@
 mapping:
   desc:
     S-1: 右点
-    S-2: 左点
     S-3: 弯钩
     S-4: 捺
     S-5: 提
@@ -30,7 +29,6 @@ mapping:
     S-29: 竖撇
   character:
     S-1: ㇔
-    S-2: ㇒
     S-3: ㇁
     S-4: ㇏
     S-5: ㇀
