@@ -73,21 +73,21 @@
             const entries = jpgdir.entries();
             for await (const entry of entries) {
                 var fname = entry[0];
-                console.log(1, fname)
+                console.log(1, field, fname)
                 var ftype = entry[1].kind;
                 const file = await entry[1].getFile();
 
-                if (file.type === "image/jpeg") {
+                if (file.type === "image/png") {
                     const reader = new FileReader();
                     reader.onload = function (e) {
-                        console.log(2, fname)
+                        console.log(2, fname, e.target.result.substring(0, 20))
                         console.log('----------------')
                         // read image
                         const img = new Image();
                         img.src = e.target.result;
 
                         // load image to memory
-                        var imgid = fname.toUpperCase().replace(".JPG", '');
+                        var imgid = fname.toUpperCase().replace(".PNG", '');
                         window.EDITOR.STROKES[field].strokes[imgid] = {
                             "img": img,
                             "adjust": {
@@ -101,6 +101,9 @@
                     reader.readAsDataURL(file);
 
                     await new Promise(resolve => setTimeout(resolve, 50));
+                }
+                else{
+                    console.log("Not a PNG file: " + fname);
                 }
             }
         }
@@ -173,7 +176,7 @@
         var ctx = canvas.getContext('2d');
 
         ctx.fillStyle = 'white';
-        ctx.fillRect(0, 0, stroke_size, stroke_size);  // fill canvas with white
+        ctx.clearRect(0, 0, stroke_size, stroke_size);  // fill canvas with transparent
 
         ctx.rotate(adjust.rotate * Math.PI / 180);
         ctx.drawImage(
@@ -185,7 +188,7 @@
         );
 
         var img = new Image();
-        img.src = canvas.toDataURL("image/jpeg");
+        img.src = canvas.toDataURL("image/png");
 
         return img;
     }
@@ -215,7 +218,7 @@
             var img = saveimg(id);
             var blob = dataURIToBlob(img.src);
 
-            var filename = id + '.jpg';
+            var filename = id + '.png';
             var fileHandle = await getFolderHD(window.EDITOR.dirHandle, "fontset2/src");
             fileHandle = await fileHandle.getFileHandle(filename, { create: true });
             const writable = await fileHandle.createWritable();
@@ -295,6 +298,10 @@
         position: absolute;
         top: 0;
         left: 0;
-        opacity: 0.6;
+        opacity: 0.4;
+    }
+
+    #stdimg img {
+        filter: invert(0.5) sepia(1) hue-rotate(324deg) brightness(1.2);
     }
 </style>
